@@ -48,12 +48,12 @@ server.on('upgrade', (req, socket, head) => {
         var msgCount = 0;
         clientWs.on('message', (data, isBinary) => {
             msgCount++;
-            if (msgCount <= 5) {
-                const str = data.toString();
-                console.log('Client msg #' + msgCount + ' isBinary:' + isBinary + ' len:' + str.length + ' preview:' + str.substring(0, 120));
+            if (msgCount <= 2) {
+                console.log('Client msg #' + msgCount + ' isBinary:' + isBinary + ' len:' + data.length);
             }
             if (elevenWs.readyState === WebSocket.OPEN) {
-                elevenWs.send(data);
+                // Always send as text frame to ElevenLabs
+                elevenWs.send(data.toString(), { binary: false });
             }
         });
 
