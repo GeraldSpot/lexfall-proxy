@@ -35,7 +35,7 @@ server.on('upgrade', (req, socket, head) => {
     }
 
     wss.handleUpgrade(req, socket, head, (clientWs) => {
-        console.log('Client connected, opening ElevenLabs WS to:', targetUrl.substring(0, 80) + '...');
+        console.log('Client connected');
         
         const elevenWs = new WebSocket(targetUrl, {
             headers: { 'Origin': 'https://elevenlabs.io' }
@@ -45,7 +45,18 @@ server.on('upgrade', (req, socket, head) => {
             console.log('ElevenLabs WS connected');
         });
 
+        var msgCount = 0;
         clientWs.on('message', (data) => {
+            msgCount++;
+            if (msgCount <= 3) {
+                try {
+                    const str = data.toString();
+                    const parsed = JSON.parse(str);
+                    console.log('Client -> ElevenLabs msg #' + msgCount + ' type:', Object.keys(parsed)[0], 'length:', str.length);
+                } catch(e) {
+                    console.log('Client -> ElevenLabs msg #' + msgCount + ' [unparseable]:', data.toString().substring(0, 100));
+                }
+            }
             if (elevenWs.readyState === WebSocket.OPEN) {
                 elevenWs.send(data);
             }
@@ -55,9 +66,7 @@ server.on('upgrade', (req, socket, head) => {
             try {
                 const msg = JSON.parse(data.toString());
                 console.log('ElevenLabs -> client:', msg.type);
-            } catch(e) {
-                console.log('ElevenLabs -> client: [binary]');
-            }
+            } catch(e) {}
             if (clientWs.readyState === WebSocket.OPEN) {
                 clientWs.send(data);
             }
