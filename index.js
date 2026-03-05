@@ -8,7 +8,6 @@ const PORT = process.env.PORT || 8080;
 const FIVEM_URL = process.env.FIVEM_URL || 'http://localhost:30120';
 const BRIDGE_SECRET = process.env.BRIDGE_SECRET || '';
 
-// ---- HTTP: validate secret then proxy to FiveM ----
 app.use((req, res, next) => {
     const secret = req.headers['x-bridge-secret'];
     if (BRIDGE_SECRET && secret !== BRIDGE_SECRET) {
@@ -23,7 +22,6 @@ app.use('/', createProxyMiddleware({
     logLevel: 'silent',
 }));
 
-// ---- WebSocket: proxy NUI -> ElevenLabs ----
 const server = createServer(app);
 const wss = new WebSocket.Server({ noServer: true });
 
@@ -37,6 +35,8 @@ server.on('upgrade', (req, socket, head) => {
     }
 
     wss.handleUpgrade(req, socket, head, (clientWs) => {
+        console.log('Client connected, opening ElevenLabs WS to:', targetUrl.substring(0, 80) + '...');
+        
         const elevenWs = new WebSocket(targetUrl, {
             headers: { 'Origin': 'https://elevenlabs.io' }
         });
@@ -52,6 +52,12 @@ server.on('upgrade', (req, socket, head) => {
         });
 
         elevenWs.on('message', (data) => {
+            try {
+                const msg = JSON.parse(data.toString());
+                console.log('ElevenLabs -> client:', msg.type);
+            } catch(e) {
+                console.log('ElevenLabs -> client: [binary]');
+            }
             if (clientWs.readyState === WebSocket.OPEN) {
                 clientWs.send(data);
             }
@@ -59,24 +65,19 @@ server.on('upgrade', (req, socket, head) => {
 
         elevenWs.on('close', (code, reason) => {
             console.log('ElevenLabs WS closed:', code, reason.toString());
-            clientWs.close(code);
+            if (clientWs.readyState === WebSocket.OPEN) clientWs.close(code);
         });
 
         elevenWs.on('error', (err) => {
             console.error('ElevenLabs WS error:', err.message);
-            clientWs.close(1011);
+            if (clientWs.readyState === WebSocket.OPEN) clientWs.close(1011);
         });
 
-        clientWs.on('close', () => {
-            elevenWs.close();
-        });
-
-        clientWs.on('error', () => {
-            elevenWs.close();
-        });
+        clientWs.on('close', () => { elevenWs.close(); });
+        clientWs.on('error', () => { elevenWs.close(); });
     });
 });
 
 server.listen(PORT, () => {
-    console.log(`Lexfall proxy running on port ${PORT}`);
+    console.log('Lexfall proxy running on port ' + PORT);
 });
