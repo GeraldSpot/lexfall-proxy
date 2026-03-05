@@ -45,13 +45,18 @@ server.on('upgrade', (req, socket, head) => {
             console.log('ElevenLabs WS connected');
         });
 
-        clientWs.on('message', (data) => {
+        var msgCount = 0;
+        clientWs.on('message', (data, isBinary) => {
+            msgCount++;
+            if (msgCount <= 5) {
+                const str = data.toString();
+                console.log('Client msg #' + msgCount + ' isBinary:' + isBinary + ' len:' + str.length + ' preview:' + str.substring(0, 120));
+            }
             if (elevenWs.readyState === WebSocket.OPEN) {
                 elevenWs.send(data);
             }
         });
 
-        // Always forward as text to avoid binary frame issues in FiveM CEF
         elevenWs.on('message', (data, isBinary) => {
             try {
                 const str = isBinary ? data.toString('utf8') : data.toString();
