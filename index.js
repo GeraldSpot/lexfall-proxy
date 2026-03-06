@@ -6,21 +6,9 @@ const fetch = require('node-fetch');
 const app = express();
 const PORT = process.env.PORT || 8080;
 const FIVEM_URL = process.env.FIVEM_URL || 'http://localhost:30120';
-const FIVEM_SECRET = process.env.FIVEM_SECRET || '';       // secret to send TO fivem
-const ELEVENLABS_SECRET = process.env.ELEVENLABS_SECRET || ''; // secret elevenlabs sends TO us
+const FIVEM_SECRET = process.env.FIVEM_SECRET || '';
 
 app.use(express.json());
-
-app.use((req, res, next) => {
-    // Skip auth for WebSocket upgrades
-    if (req.headers.upgrade === 'websocket') return next();
-    // Validate secret from ElevenLabs
-    const secret = req.headers['x-bridge-secret'];
-    if (ELEVENLABS_SECRET && secret !== ELEVENLABS_SECRET) {
-        return res.status(403).json({ error: 'Forbidden' });
-    }
-    next();
-});
 
 app.all('*', async (req, res) => {
     try {
