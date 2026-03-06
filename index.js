@@ -16,7 +16,34 @@ app.use((req, res, next) => {
     next();
 });
 
-app.use('/', createProxyMiddleware({
+// For non-WebSocket requests: strip query string from path, inject params into body
+app.use('/', (req, res, next) => {
+    if (req.url.includes('?')) {
+        const [path, queryStr] = req.url.split('?');
+        const params = {};
+        queryStr.split('&').forEach(pair => {
+            const [k, v] = pair.split('=');
+            if (k) params[decodeURIComponent(k)] = decodeURIComponent(v || '');
+        });
+        // Rewrite URL without query string
+        req.url = path;
+        // Inject params as JSON body
+        const bodyStr = JSON.stringify(params);
+        req.headers['content-type'] = 'application/json';
+        req.headers['content-length'] = Buffer.byteLength(bodyStr);
+        const { Readable } = require('stream');
+        req._body = bodyStr;
+        // Override the stream
+        const readable = new Readable();
+        readable.push(bodyStr);
+        readable.push(null);
+        Object.assign(req, readable);
+        readable.pipe = readable.pipe.bind(readable);
+        req.pipe = readable.pipe.bind(readable);
+        req.on = readable.on.bind(readable);
+    }
+    next();
+}, createProxyMiddleware({
     target: FIVEM_URL,
     changeOrigin: true,
     logLevel: 'silent',
@@ -41,18 +68,10 @@ server.on('upgrade', (req, socket, head) => {
             headers: { 'Origin': 'https://elevenlabs.io' }
         });
 
-        elevenWs.on('open', () => {
-            console.log('ElevenLabs WS connected');
-        });
+        elevenWs.on('open', () => console.log('ElevenLabs WS connected'));
 
-        var msgCount = 0;
-        clientWs.on('message', (data, isBinary) => {
-            msgCount++;
-            if (msgCount <= 2) {
-                console.log('Client msg #' + msgCount + ' isBinary:' + isBinary + ' len:' + data.length);
-            }
+        clientWs.on('message', (data) => {
             if (elevenWs.readyState === WebSocket.OPEN) {
-                // Always send as text frame to ElevenLabs
                 elevenWs.send(data.toString(), { binary: false });
             }
         });
@@ -62,13 +81,9 @@ server.on('upgrade', (req, socket, head) => {
                 const str = isBinary ? data.toString('utf8') : data.toString();
                 const msg = JSON.parse(str);
                 console.log('ElevenLabs -> client:', msg.type);
-                if (clientWs.readyState === WebSocket.OPEN) {
-                    clientWs.send(str);
-                }
+                if (clientWs.readyState === WebSocket.OPEN) clientWs.send(str);
             } catch(e) {
-                if (clientWs.readyState === WebSocket.OPEN) {
-                    clientWs.send(data);
-                }
+                if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
             }
         });
 
@@ -82,11 +97,9 @@ server.on('upgrade', (req, socket, head) => {
             if (clientWs.readyState === WebSocket.OPEN) clientWs.close(1011);
         });
 
-        clientWs.on('close', () => { elevenWs.close(); });
-        clientWs.on('error', () => { elevenWs.close(); });
+        clientWs.on('close', () => elevenWs.close());
+        clientWs.on('error', () => elevenWs.close());
     });
 });
 
-server.listen(PORT, () => {
-    console.log('Lexfall proxy running on port ' + PORT);
-});
+server.listen(PORT, () => console.log('Lexfall proxy running on port ' + PORT));
