@@ -1,12 +1,14 @@
 const express = require('express');
-const { createProxyMiddleware } = require('http-proxy-middleware');
 const { createServer } = require('http');
 const WebSocket = require('ws');
+const fetch = require('node-fetch');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
 const FIVEM_URL = process.env.FIVEM_URL || 'http://localhost:30120';
 const BRIDGE_SECRET = process.env.BRIDGE_SECRET || '';
+
+app.use(express.json());
 
 app.use((req, res, next) => {
     const secret = req.headers['x-bridge-secret'];
@@ -16,38 +18,31 @@ app.use((req, res, next) => {
     next();
 });
 
-// For non-WebSocket requests: strip query string from path, inject params into body
-app.use('/', (req, res, next) => {
-    if (req.url.includes('?')) {
-        const [path, queryStr] = req.url.split('?');
-        const params = {};
-        queryStr.split('&').forEach(pair => {
-            const [k, v] = pair.split('=');
-            if (k) params[decodeURIComponent(k)] = decodeURIComponent(v || '');
+// Handle all non-upgrade HTTP requests manually
+app.all('*', async (req, res) => {
+    try {
+        // Merge query params + body into one object
+        const params = { ...req.query, ...req.body };
+        const path = req.path;
+
+        console.log('Proxying:', req.method, path, params);
+
+        const response = await fetch(FIVEM_URL + path, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-bridge-secret': BRIDGE_SECRET,
+            },
+            body: JSON.stringify(params),
         });
-        // Rewrite URL without query string
-        req.url = path;
-        // Inject params as JSON body
-        const bodyStr = JSON.stringify(params);
-        req.headers['content-type'] = 'application/json';
-        req.headers['content-length'] = Buffer.byteLength(bodyStr);
-        const { Readable } = require('stream');
-        req._body = bodyStr;
-        // Override the stream
-        const readable = new Readable();
-        readable.push(bodyStr);
-        readable.push(null);
-        Object.assign(req, readable);
-        readable.pipe = readable.pipe.bind(readable);
-        req.pipe = readable.pipe.bind(readable);
-        req.on = readable.on.bind(readable);
+
+        const text = await response.text();
+        res.status(response.status).set('Content-Type', 'application/json').send(text);
+    } catch (err) {
+        console.error('Proxy error:', err.message);
+        res.status(502).json({ error: 'Bad gateway: ' + err.message });
     }
-    next();
-}, createProxyMiddleware({
-    target: FIVEM_URL,
-    changeOrigin: true,
-    logLevel: 'silent',
-}));
+});
 
 const server = createServer(app);
 const wss = new WebSocket.Server({ noServer: true });
